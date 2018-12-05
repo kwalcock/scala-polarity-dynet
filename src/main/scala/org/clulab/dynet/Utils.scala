@@ -2,7 +2,7 @@ package org.clulab.dynet
 
 import edu.cmu.dynet._
 
-object Utils extends App {
+object Utils {
 
   def load(path:String, pc:ParameterCollection, nameSpace: String = "/"):Map[String, Any] = {
 
@@ -16,15 +16,16 @@ object Utils extends App {
         List.empty[MetaData]
       else{
         val header = lines.next()
+        // huh seems to be the line length
         val Array(typ, name, dimensions, huh, grad) = header.split(" ")
         val dims = dimensions.substring(1, dimensions.length-1).split(",").map(_.toInt)
 
         if(typ == "#Parameter#"){
-          ParamMetadata(name, Dim(dims))::readParams(lines, pc)
+          ParamMetadata(name, Dim(dims)) :: readParams(lines, pc)
         }
         else if(typ == "#LookupParameter#") {
           val numElems = dims(1)
-          LookupParamMetadata(name, Dim(dims(0)), numElems)::readParams(lines, pc)
+          LookupParamMetadata(name, Dim(dims(0)), numElems) :: readParams(lines, pc)
         }
         else{
           throw new RuntimeException("Unrecognized line in model file")
@@ -33,15 +34,11 @@ object Utils extends App {
     }
 
     val src = io.Source.fromFile(path)
-
     val lines = src.getLines() filter (_.startsWith("#")) filter (_.contains(nameSpace))
-
-    val params = readParams(lines, pc)
-
     src.close()
 
+    val params = readParams(lines, pc)
     val loader = new ModelLoader(path)
-
     val ret = params map {
       case ParamMetadata(name, dim) =>
         val param = pc.addParameters(dim)
@@ -58,8 +55,11 @@ object Utils extends App {
     ret.toMap
   }
 
-  // Ad-hoc test
-  val pc = new ParameterCollection
-  val x = load("model.dy", pc, "/vanilla-lstm-builder/")
-  println(x.size)
+  def main(args: Array[String]): Unit = {
+    // Ad-hoc test
+    // Put pc internal if never used
+    val pc = new ParameterCollection
+    val x: Map[String, Any] = load("model.dy", pc, "/vanilla-lstm-builder/")
+    println(x.size)
+  }
 }
