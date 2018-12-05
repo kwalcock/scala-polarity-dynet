@@ -44,7 +44,7 @@ object App extends App{
   loader.populateParameter(W_p, key = "/W")
   loader.populateParameter(b_p, key = "/b")
   loader.populateParameter(V_p, key = "/V")
-  loader.populateLookupParameter(missing_wemb_lp, key = "/missing-wemb")
+//  loader.populateLookupParameter(missing_wemb_lp, key = "/missing-wemb")
   loader.populateLookupParameter(w2v_wemb_lp, key = "/w2v-wemb")
 
 
