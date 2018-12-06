@@ -1,12 +1,17 @@
 package org.clulab.fatdynet.utils
 
-import edu.cmu.dynet._
+import edu.cmu.dynet.{Dim, Expression, Initialize, ModelLoader, ParameterCollection}
 
 import org.clulab.fatdynet.utils.Closer.AutoCloser
 
 import scala.io.Source
 
 object Loader {
+
+  class ClosableModelLoader(filename: String) extends ModelLoader(filename) {
+
+    def close(): Unit = done
+  }
 
   // loadModel?
   def load(path: String, nameSpace: String = "/"): Map[String, Expression] = {
@@ -30,21 +35,18 @@ object Loader {
       (name, expression)
     }
 
-    // With loader do
-    val loader = new ModelLoader(path)
+    val expressions = (new ClosableModelLoader(path)).autoClose { loader =>
+      Source.fromFile(path).autoClose { source =>
+        val pc = new ParameterCollection
 
-    val expressions = Source.fromFile(path).autoClose { source =>
-      val pc = new ParameterCollection
-
-      source
-          .getLines
-          .filter(_.startsWith("#"))
-          .filter(_.contains(nameSpace))
-          .map { line => read(line, loader, pc) }
-          .toMap
+        source
+            .getLines
+            .filter(_.startsWith("#"))
+            .filter(_.contains(nameSpace))
+            .map { line => read(line, loader, pc) }
+            .toMap
+      }
     }
-
-    loader.done()
 
     expressions
   }
