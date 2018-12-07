@@ -1,6 +1,6 @@
 package org.clulab.fatdynet.utils
 
-import edu.cmu.dynet.{Dim, Expression, Initialize, LstmBuilder, ModelLoader, ParameterCollection}
+import edu.cmu.dynet.{Dim, Expression, Initialize, LookupParameter, LstmBuilder, ModelLoader, ModelSaver, Parameter, ParameterCollection}
 
 import org.clulab.fatdynet.utils.Closer.AutoCloser
 
@@ -12,12 +12,16 @@ object Loader {
     def close(): Unit = done
   }
 
+  protected class ClosableModelSaver(filename: String) extends ModelSaver(filename) {
+    def close(): Unit = done
+  }
+
   // This converts an objectType and objectName into a decision about whether
   // to further process the line.  It can use the ModelLoader to do some
   // processing itself.  See falseModelFilter and loadLstm for examples.
-  protected type ModelFilter = (ModelLoader, String, String) => Boolean
+  protected type ModelFilter = (ModelLoader, String, String, Array[Int]) => Boolean
 
-  protected def falseModelFilter(modelLoader: ModelLoader, objectType: String, objectName: String) = {
+  protected def falseModelFilter(modelLoader: ModelLoader, objectType: String, objectName: String, dims: Array[Int]) = {
     // Skip these kinds of thing because they are likely a model of some kind.
     !(objectType == "#Parameter#" && objectName.matches(".*/_[0-9]+$"))
   }
@@ -30,10 +34,10 @@ object Loader {
     def read(line: String, modelLoader: ModelLoader, pc: ParameterCollection): Option[(String, Expression)] = {
       // See https://dynet.readthedocs.io/en/latest/python_saving_tutorial.html
       val Array(objectType, objectName, dimension, _, _) = line.split(" ")
+      val dims = dimension.substring(1, dimension.length - 1).split(",").map(_.toInt)
 
-      if (objectName.startsWith(namespace) && modelFilter(modelLoader, objectType, objectName)) {
+      if (objectName.startsWith(namespace) && modelFilter(modelLoader, objectType, objectName, dims)) {
         // Skip leading { and trailing }
-        val dims = dimension.substring(1, dimension.length - 1).split(",").map(_.toInt)
         val expression = objectType match {
           case "#Parameter#" =>
             val param = pc.addParameters(Dim(dims))
@@ -67,42 +71,104 @@ object Loader {
   }
 
   def loadLstm(path: String, namespace: String = ""): (Option[LstmBuilder], Map[String, Expression]) = {
-    var lstmBuilder: Option[LstmBuilder] = None
+    val model = new ParameterCollection
+    var inputDim = -1
+    var hiddenDim = -1
+    var layers = 0
 
-    def lstmModelFilter(modelLoader: ModelLoader, objectType: String, objectName: String) = {
-      if (objectType == "#Parameter#") {
-        val matches = objectName.matches("(.*)/vanilla-lstm-builder/_[0-9]+$")
+    def lstmModelFilter(modelLoader: ModelLoader, objectType: String, objectName: String, dims: Array[Int]) = {
+      if (objectType == "#Parameter#" && objectName.matches(".*/vanilla-lstm-builder/_[0-9]+$")) {
+        val param = model.addParameters(Dim(dims))
+        modelLoader.populateParameter(param, key = objectName)
 
-        if (matches) {
-          val key = "/keith/vanilla-lstm-builder/"
-          val pc = new ParameterCollection
-          val layers = 1
-          val inputDim = 100
-          val hiddenDim = 20
-          // Do I need to build a parameter collection with each call?
-
-          // Do need to capture the name in regex
-          modelLoader.populateModel(pc, key)
-          lstmBuilder = Option(new LstmBuilder(1, 2, 3, pc))
-          false
-        }
-        else
-          true
+        // This is only going to support one model, at least one per namespace.
+        if (layers == 0)
+          inputDim = dims(1)
+        else if (layers == 1)
+          hiddenDim = dims(1)
+        layers += 1
+        false
       }
       else
         true
     }
 
+    // Could throw exception rather than use option
     val expressions = filteredLoadExpressions(path, namespace, lstmModelFilter)
+    val lstmBuilder =
+        if (layers >= 2)
+          Option(new LstmBuilder(layers - 2, inputDim, hiddenDim, model))
+        else
+          None
 
     (lstmBuilder, expressions)
   }
 
-  def main(args: Array[String]): Unit = {
-    Initialize.initialize(Map("random-seed" -> 2522620396l))
+  def write(filename: String): Unit = {
+    val VOC_SIZE = 3671
+    val W2V_SIZE = 1234
 
-    val (builder, expressions) = loadLstm("model.dy.kwa") // , "/vanilla-lstm-builder/")
+    val WEM_DIMENSIONS = 100
+    val NUM_LAYERS = 1
+    val FF_HIDDEN_DIM = 10
+    val HIDDEN_DIM = 20
+
+    val pc = new ParameterCollection
+    val model = new ParameterCollection
+
+    val W_p: Parameter = pc.addParameters(Dim(Seq(FF_HIDDEN_DIM, HIDDEN_DIM)))
+    val b_p: Parameter = pc.addParameters(Dim(Seq(FF_HIDDEN_DIM)))
+    val V_p: Parameter = pc.addParameters(Dim(Seq(1, FF_HIDDEN_DIM)))
+
+    val w2v_wemb_lp: LookupParameter = pc.addLookupParameters(W2V_SIZE, Dim(Seq(WEM_DIMENSIONS)))
+    val missing_wemb_lp: LookupParameter = pc.addLookupParameters(VOC_SIZE, Dim(Seq(WEM_DIMENSIONS)))
+
+    val builder = new LstmBuilder(NUM_LAYERS, WEM_DIMENSIONS, HIDDEN_DIM, model)
+
+    (new ClosableModelSaver(filename)).autoClose { saver =>
+      saver.addParameter(W_p, "/W")
+      saver.addParameter(b_p, "/b")
+      saver.addParameter(V_p, "/V")
+      saver.addLookupParameter(w2v_wemb_lp, "/w2v-wemb")
+      saver.addLookupParameter(missing_wemb_lp, "/missing-wemb")
+      saver.addModel(model)
+    }
+  }
+
+  def read(filename: String): Unit = {
+    val (optionBuilder, expressions) = loadLstm(filename)
 
     expressions.keys.foreach(println)
+
+    val builder = optionBuilder.get
+    val V = expressions("/V")
+    val W = expressions("/W")
+    val b = expressions("/b")
+
+    val pc = new ParameterCollection
+    // Can this be different?
+    val WEM_DIMENSIONS = 100
+    val w2v_wemb_lp: LookupParameter = pc.addLookupParameters(1000 /*584550 1579375*/, Dim(Seq(WEM_DIMENSIONS)))
+
+    val inputs = 0.until(100) map { Expression.lookup(w2v_wemb_lp, _)}
+
+    builder.newGraph()
+    builder.startNewSequence()
+
+    val states = inputs map {
+      w => builder.addInput(w)
+    }
+    val selected = states.last
+    val prediction = Expression.logistic(V * (W * selected + b))
+
+    println(prediction)
+  }
+
+  def main(args: Array[String]): Unit = {
+    val filename = "model.dy.kwa"
+
+    Initialize.initialize(Map("random-seed" -> 2522620396l))
+    write(filename)
+    read(filename)
   }
 }
