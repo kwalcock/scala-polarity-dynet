@@ -4,7 +4,7 @@ import edu.cmu.dynet._
 
 import scala.io.Source
 
-object App extends App{
+object ReaderApp extends App{
   Initialize.initialize(Map("random-seed" -> 2522620396l))
   val p = "model.dy"
   val dictPath = "vocab.txt"
@@ -18,7 +18,7 @@ object App extends App{
   val missing_voc = lines.zipWithIndex.toMap
   val w2v_voc = lines2.zipWithIndex.toMap
 
-  val VOC_SIZE = 3671//voc.size
+//  val VOC_SIZE = 3671//voc.size
   val WEM_DIMENSIONS = 100
 
   val NUM_LAYERS = 1
@@ -26,17 +26,17 @@ object App extends App{
   val FF_HIDDEN_DIM = 10
   val HIDDEN_DIM = 20
 
-  val missing_wemb_lp: LookupParameter = pc.addLookupParameters(VOC_SIZE, Dim(Seq(WEM_DIMENSIONS)))
+//  val missing_wemb_lp: LookupParameter = pc.addLookupParameters(VOC_SIZE, Dim(Seq(WEM_DIMENSIONS)))
   val useThis = lines2.size // Which comes from w2v_voc
   //584550
-  val w2v_wemb_lp: LookupParameter = pc.addLookupParameters(1234, /*1579375,*/ Dim(Seq(WEM_DIMENSIONS)))
+  val w2v_wemb_lp: LookupParameter = pc.addLookupParameters(584550 /*1579375*/, Dim(Seq(WEM_DIMENSIONS)))
   // Feed-Forward parameters
   val W_p: Parameter = pc.addParameters(Dim(Seq(FF_HIDDEN_DIM, HIDDEN_DIM)))
   val b_p: Parameter = pc.addParameters(Dim(Seq(FF_HIDDEN_DIM)))
   val V_p: Parameter = pc.addParameters(Dim(Seq(1, FF_HIDDEN_DIM)))
 
-  // layers: Long, inputDim: Long, hiddenDim:
   val builder = new LstmBuilder(NUM_LAYERS, WEM_DIMENSIONS, HIDDEN_DIM, lpc)
+  // lpc allows access to the builder's parameters
 
   val loader = new ModelLoader(p)
 

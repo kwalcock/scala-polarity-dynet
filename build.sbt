@@ -1,4 +1,4 @@
-name := "fatdynetClient"
+name := "scalaPolarityDynet"
 
 organization := "org.clulab"
 

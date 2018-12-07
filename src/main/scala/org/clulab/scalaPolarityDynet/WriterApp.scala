@@ -4,7 +4,7 @@ import edu.cmu.dynet._
 
 import scala.io.Source
 
-object App extends App{
+object WriterApp extends App{
   Initialize.initialize(Map("random-seed" -> 2522620396l))
   val p = "model.dy"
   val dictPath = "vocab.txt"
@@ -29,25 +29,40 @@ object App extends App{
   val missing_wemb_lp: LookupParameter = pc.addLookupParameters(VOC_SIZE, Dim(Seq(WEM_DIMENSIONS)))
   val useThis = lines2.size // Which comes from w2v_voc
   //584550
-  val w2v_wemb_lp: LookupParameter = pc.addLookupParameters(1234, /*1579375,*/ Dim(Seq(WEM_DIMENSIONS)))
+  val w2v_wemb_lp: LookupParameter = pc.addLookupParameters(1000 /*584550 1579375*/, Dim(Seq(WEM_DIMENSIONS)))
   // Feed-Forward parameters
   val W_p: Parameter = pc.addParameters(Dim(Seq(FF_HIDDEN_DIM, HIDDEN_DIM)))
   val b_p: Parameter = pc.addParameters(Dim(Seq(FF_HIDDEN_DIM)))
   val V_p: Parameter = pc.addParameters(Dim(Seq(1, FF_HIDDEN_DIM)))
 
-  // layers: Long, inputDim: Long, hiddenDim:
+  // WEM_DIMENSIONS is /_0 second dim 100
+  // HIDDEN_DIM is /_1 second dim
+  // Where does the 80 come from
   val builder = new LstmBuilder(NUM_LAYERS, WEM_DIMENSIONS, HIDDEN_DIM, lpc)
+  // lpc allows access to the builder's parameters
 
-  val loader = new ModelLoader(p)
+  val saver = new ModelSaver(p + ".kwa")
+  saver.addParameter(W_p, "/W")
+  saver.addParameter(b_p, "/b")
+  saver.addParameter(V_p, "/V")
+  saver.addLookupParameter(w2v_wemb_lp, "/w2v-wemb")
+  saver.addLookupParameter(missing_wemb_lp, "/missing-wemb")
+  saver.addModel(lpc, "/keith")
+  saver.done
+
+
+  val loader = new ModelLoader(p + ".kwa")
+
 
   //loader.populateModel(pc, "/")
-  loader.populateModel(lpc, "/vanilla-lstm-builder/")
+  loader.populateModel(lpc, "/keith")
 
   loader.populateParameter(W_p, key = "/W")
   loader.populateParameter(b_p, key = "/b")
   loader.populateParameter(V_p, key = "/V")
 //  loader.populateLookupParameter(missing_wemb_lp, key = "/missing-wemb")
   loader.populateLookupParameter(w2v_wemb_lp, key = "/w2v-wemb")
+  loader.populateLookupParameter(missing_wemb_lp, key = "/missing-wemb")
 
 
   val W: Expression = Expression.parameter(W_p)
